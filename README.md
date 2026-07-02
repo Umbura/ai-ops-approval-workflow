@@ -1,5 +1,7 @@
 # AI Ops Approval Workflow
 
+[![CI](https://github.com/Umbura/ai-ops-approval-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Umbura/ai-ops-approval-workflow/actions/workflows/ci.yml)
+
 Backend-first portfolio project for AI-assisted operational triage with human approval and audit logging.
 
 This repository is intentionally small enough to publish quickly, but structured like a real service:
@@ -82,4 +84,3 @@ The backend already produces:
 Build the n8n workflow:
 
 Webhook -> HTTP Request to backend -> IF/Switch -> Send approval -> Wait -> Decision endpoint -> Respond to Webhook.
-

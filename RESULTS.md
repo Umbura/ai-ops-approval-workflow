@@ -16,6 +16,7 @@ This repository currently ships a backend-only MVP for an AI-assisted operations
 - API integration is tested with direct ASGI transport, without requiring a running server.
 - The local API starts successfully with Uvicorn.
 - `POST /requests` creates and classifies a high-risk request.
+- GitHub Actions CI is configured to run dependency sync, lint, tests, and compilation on every push and pull request to `main`.
 
 ## Smoke Test Output
 
