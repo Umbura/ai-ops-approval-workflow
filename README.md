@@ -2,41 +2,65 @@
 
 [![CI](https://github.com/Umbura/ai-ops-approval-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Umbura/ai-ops-approval-workflow/actions/workflows/ci.yml)
 
-Backend-first portfolio project for AI-assisted operational triage with human approval and audit logging.
+Backend for AI-assisted operational request triage with human approval and audit logging.
 
-This repository is intentionally small enough to publish quickly, but structured like a real service:
+The application receives operational requests, classifies risk, stores request state, requires human review for sensitive cases, and exposes approval and audit endpoints. It supports deterministic local triage by default and optional OpenAI Responses API triage with Structured Outputs.
 
-- FastAPI backend.
-- SQLite persistence for the MVP.
-- Deterministic mock AI classifier, so the demo works without paid API keys.
-- Optional OpenAI Responses API triage with Structured Outputs.
-- Human approval endpoint before any final action.
-- Audit trail for every important transition.
-- Importable n8n workflow export.
+## Overview
 
-## Why This Project Exists
+The system separates request intake, triage, persistence, human decisioning, and auditability. The FastAPI backend owns business rules and state transitions. n8n is used as an orchestration layer through an importable workflow export.
 
-The target jobs ask for practical AI automation: Python, APIs, n8n, SQL, LLMs, workflow orchestration, human review, and logs. This project demonstrates those skills without depending on a fragile chatbot demo.
+The default configuration does not require paid API calls. OpenAI mode can be enabled through environment variables without changing the API contract.
 
-## Reuse And License Position
+## Implemented Scope
 
-I studied n8n, LangGraph, CrewAI, and public n8n workflow examples. This project does not copy their source code.
+- FastAPI service with request, decision, metrics, audit, and health endpoints.
+- SQLite persistence for requests, decisions, and audit events.
+- Deterministic mock triage provider.
+- Optional OpenAI Responses API triage provider.
+- Structured Outputs JSON Schema for LLM responses.
+- Fallback from OpenAI triage to deterministic triage.
+- Forced human review for high-risk cases.
+- Importable n8n workflow JSON.
+- Unit and integration tests.
+- GitHub Actions CI.
 
-What is reused:
+## Execution Flow
 
-- Project structure ideas: `pyproject.toml`, typed modules, tests, docs.
-- Architecture patterns: webhook input, backend decisioning, human approval, audit logging.
-- Workflow concepts: n8n as visual orchestrator and FastAPI as testable business backend.
+```text
+request payload
+  -> FastAPI POST /requests
+  -> triage provider
+      -> mock mode: deterministic classifier
+      -> openai mode: Responses API + Structured Outputs
+      -> fallback: deterministic classifier when enabled
+  -> safety boundary
+      -> force human review for high-risk cases
+  -> SQLite state and audit log
+  -> response with category, priority, confidence, and suggested action
+  -> optional human decision via POST /requests/{id}/decision
+```
 
-What is not reused:
+## Safety Model
 
-- No copied source files from n8n, LangGraph, CrewAI, or n8n-workflows.
-- No workflow JSON copied from public collections.
-- No vendor credentials or templates.
+The backend does not execute final operational actions automatically. It classifies the request, suggests the next step, and records a human decision.
 
-## Quick Start
+Human review is required for:
 
-```powershell
+- high or critical priority;
+- fraud or security signals;
+- high amount at risk;
+- VIP, enterprise, or strategic customers;
+- destructive action requests;
+- low-confidence deterministic classification.
+
+When OpenAI mode is enabled, the backend still applies deterministic safety checks after parsing the model output.
+
+## API
+
+Start the local API:
+
+```bash
 uv sync
 uv run uvicorn ai_ops_approval.main:app --reload
 ```
@@ -47,38 +71,7 @@ Open:
 http://127.0.0.1:8000/docs
 ```
 
-If you do not want to install dependencies yet, you can still inspect the code and run pure-Python checks over the domain layer.
-
-## LLM Mode
-
-The default mode is deterministic and cost-free:
-
-```env
-AI_OPS_LLM_MODE=mock
-```
-
-To use OpenAI for real triage, configure:
-
-```env
-AI_OPS_LLM_MODE=openai
-OPENAI_API_KEY=your_key_here
-AI_OPS_OPENAI_MODEL=gpt-5.4-mini
-AI_OPS_LLM_FALLBACK_ENABLED=true
-```
-
-The backend uses the Responses API with a JSON Schema output format. If the OpenAI call fails and fallback is enabled, the request is classified by the local deterministic triage engine and marked with `llm_fallback_used`.
-
-Do not commit `.env`; it is ignored by Git.
-
-## Example Request
-
-```bash
-curl -X POST http://127.0.0.1:8000/requests ^
-  -H "Content-Type: application/json" ^
-  -d @examples/high_priority_request.json
-```
-
-## API Shape
+Endpoints:
 
 - `GET /health`
 - `POST /requests`
@@ -88,47 +81,150 @@ curl -X POST http://127.0.0.1:8000/requests ^
 - `GET /metrics`
 - `GET /audit`
 
+Example request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/requests \
+  -H "Content-Type: application/json" \
+  -d @examples/high_priority_request.json
+```
+
+## LLM Configuration
+
+Default no-cost mode:
+
+```env
+AI_OPS_LLM_MODE=mock
+```
+
+OpenAI mode:
+
+```env
+AI_OPS_LLM_MODE=openai
+OPENAI_API_KEY=your_key_here
+AI_OPS_OPENAI_MODEL=gpt-5.4-mini
+AI_OPS_LLM_FALLBACK_ENABLED=true
+```
+
+The `.env` file is ignored by Git.
+
 ## n8n Workflow
 
-Import:
+Workflow export:
 
 ```text
 workflows/ai_ops_approval_n8n.json
 ```
 
-The workflow has two webhook paths:
+Webhook paths:
 
 - `POST /webhook/ai-ops-request`
 - `POST /webhook/ai-ops-decision`
 
-Set this in n8n:
+Backend URL for n8n on the host machine:
 
 ```text
 AI_OPS_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-If n8n runs in Docker, use:
+Backend URL for n8n in Docker:
 
 ```text
 AI_OPS_API_BASE_URL=http://host.docker.internal:8000
 ```
 
-## Technical References
+The workflow export contains no credentials.
+
+## Local Commands
+
+Install dependencies:
+
+```bash
+uv sync --dev
+```
+
+Run tests and lint:
+
+```bash
+uv run pytest -q
+uv run ruff check .
+```
+
+Compile Python modules:
+
+```bash
+uv run python -m compileall -q src tests
+```
+
+Validate the n8n workflow JSON:
+
+```bash
+python -m json.tool workflows/ai_ops_approval_n8n.json
+```
+
+## Validation Results
+
+Latest validation:
+
+| Check | Result |
+| --- | ---: |
+| Unit and integration tests | 6 passed |
+| Lint | passed |
+| Python compilation | passed |
+| n8n workflow JSON validation | passed |
+| GitHub Actions CI | passed |
+
+OpenAI behavior is tested with a mocked HTTP transport. No real OpenAI request is required for the automated test suite.
+
+## Repository Layout
+
+```text
+docs/                   architecture, demo, publishing, and workflow notes
+examples/               sample request payloads
+src/ai_ops_approval/    FastAPI backend, triage providers, storage, schemas
+tests/                  unit and integration tests
+workflows/              importable n8n workflow export
+```
+
+## Roadmap
+
+### Phase 1: Backend MVP
+
+Status: implemented.
+
+- Request intake API.
+- Deterministic triage.
+- SQLite persistence.
+- Human decision endpoint.
+- Audit events.
+- Metrics endpoint.
+- Tests and CI.
+
+### Phase 2: LLM And Workflow Integration
+
+Status: implemented.
+
+- OpenAI Responses API provider.
+- Structured Outputs schema.
+- Fallback behavior.
+- Importable n8n workflow.
+
+### Phase 3: Runtime Validation
+
+- Run one real OpenAI smoke test.
+- Import and execute the n8n workflow in a local n8n instance.
+- Document request and decision webhook outputs with screenshots.
+
+### Phase 4: Deployment And UI
+
+- Deploy the backend.
+- Add a minimal approval dashboard.
+- Replace SQLite with PostgreSQL for deployed environments.
+- Add API-key authentication for exposed endpoints.
+
+## References
 
 - OpenAI Responses API: https://developers.openai.com/api/reference/resources/responses/methods/create/
 - OpenAI Structured Outputs: https://developers.openai.com/api/docs/guides/structured-outputs
 
-## MVP Result
-
-The backend already produces:
-
-- Request classification.
-- Priority.
-- Confidence score.
-- Suggested action.
-- Human review requirement.
-- Persisted request state.
-- Audit events.
-- Metrics.
-- Optional real LLM triage.
-- Importable n8n webhook workflow.
+License and reuse notes are documented in `docs/reuse_and_license.md`.
