@@ -6,7 +6,8 @@ from typing import Annotated
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 
-from ai_ops_approval.domain import Decision, RequestStatus, triage_request
+from ai_ops_approval.domain import Decision, RequestStatus
+from ai_ops_approval.llm import TriageProvider, TriageProviderError, build_triage_provider
 from ai_ops_approval.schemas import (
     AuditEventResponse,
     DecisionCreate,
@@ -31,8 +32,14 @@ def get_store() -> RequestStore:
     return RequestStore(settings.db_path)
 
 
+@lru_cache
+def get_triage_provider() -> TriageProvider:
+    return build_triage_provider(get_settings())
+
+
 StoreDep = Annotated[RequestStore, Depends(get_store)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+TriageProviderDep = Annotated[TriageProvider, Depends(get_triage_provider)]
 
 
 @app.get("/health")
@@ -42,13 +49,19 @@ def health(settings: SettingsDep) -> dict[str, str]:
         "app": settings.app_name,
         "env": settings.env,
         "llm_mode": settings.llm_mode,
+        "llm_model": settings.openai_model if settings.llm_mode == "openai" else "mock",
+        "llm_fallback_enabled": str(settings.llm_fallback_enabled).lower(),
     }
 
 
 @app.post("/requests", response_model=RequestResponse, status_code=status.HTTP_201_CREATED)
-def create_request(payload: RequestCreate, store: StoreDep) -> dict:
-    triage = triage_request(payload.model_dump())
-    return store.create_request(payload.model_dump(), triage)
+def create_request(payload: RequestCreate, store: StoreDep, provider: TriageProviderDep) -> dict:
+    request_payload = payload.model_dump()
+    try:
+        triage = provider.triage(request_payload)
+    except TriageProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return store.create_request(request_payload, triage)
 
 
 @app.get("/requests", response_model=list[RequestResponse])
@@ -101,4 +114,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

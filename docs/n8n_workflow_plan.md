@@ -1,36 +1,60 @@
-# n8n Workflow Plan
+# n8n Workflow
 
-This backend is ready to be connected to n8n. The workflow should be created manually first, then exported as JSON into `workflows/`.
+This backend includes an importable n8n workflow at:
+
+```text
+workflows/ai_ops_approval_n8n.json
+```
+
+The export stores no credentials.
 
 ## Nodes
 
-1. Webhook
+1. Submit Request Webhook
    - Method: POST
    - Path: `ai-ops-request`
    - Response mode: using Respond to Webhook node
 
-2. HTTP Request
-   - POST `http://host.docker.internal:8000/requests`
+2. Create Backend Request
+   - POST `{{$env.AI_OPS_API_BASE_URL}}/requests`
+   - Fallback base URL: `http://host.docker.internal:8000`
    - Body: incoming webhook JSON
 
-3. IF / Switch
-   - Check `triage.requires_human_review`
+3. Prepare Request Response
+   - Returns request id, status, category, priority, suggested action, and decision webhook instructions
 
-4. Approval notification
-   - Email, Slack, Telegram, or mock HTTP node
-   - Include request id, summary, suggested action and risk flags
+4. Decision Webhook
+   - Method: POST
+   - Path: `ai-ops-decision`
+   - Body: `request_id`, `decision`, `reviewer`, `notes`
 
-5. Wait
-   - Resume by form or webhook
-   - Capture approve/reject/request_changes
+5. Record Backend Decision
+   - POST `{{$env.AI_OPS_API_BASE_URL}}/requests/{request_id}/decision`
 
-6. HTTP Request
-   - POST `/requests/{id}/decision`
+## Local Import
 
-7. Respond to Webhook
-   - Return request id, status and suggested action
+1. Start the backend:
+
+```powershell
+uv run uvicorn ai_ops_approval.main:app --reload
+```
+
+2. In n8n, set the environment variable:
+
+```text
+AI_OPS_API_BASE_URL=http://host.docker.internal:8000
+```
+
+For n8n running directly on the host machine, use:
+
+```text
+AI_OPS_API_BASE_URL=http://127.0.0.1:8000
+```
+
+3. Import `workflows/ai_ops_approval_n8n.json`.
+
+4. Test the submit webhook with a payload like `examples/high_priority_request.json`.
 
 ## Export Rule
 
 Do not export credentials. Use placeholders only.
-

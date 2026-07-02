@@ -2,13 +2,15 @@ import asyncio
 
 import httpx
 
-from ai_ops_approval.main import app, get_store
+from ai_ops_approval.llm import MockTriageProvider
+from ai_ops_approval.main import app, get_store, get_triage_provider
 from ai_ops_approval.storage import RequestStore
 
 
 def test_api_request_decision_and_metrics(tmp_path) -> None:
     store = RequestStore(str(tmp_path / "api.db"))
     app.dependency_overrides[get_store] = lambda: store
+    app.dependency_overrides[get_triage_provider] = lambda: MockTriageProvider()
 
     async def run_flow() -> None:
         transport = httpx.ASGITransport(app=app)

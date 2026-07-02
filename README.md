@@ -9,9 +9,10 @@ This repository is intentionally small enough to publish quickly, but structured
 - FastAPI backend.
 - SQLite persistence for the MVP.
 - Deterministic mock AI classifier, so the demo works without paid API keys.
+- Optional OpenAI Responses API triage with Structured Outputs.
 - Human approval endpoint before any final action.
 - Audit trail for every important transition.
-- n8n integration plan documented for the next step.
+- Importable n8n workflow export.
 
 ## Why This Project Exists
 
@@ -48,6 +49,27 @@ http://127.0.0.1:8000/docs
 
 If you do not want to install dependencies yet, you can still inspect the code and run pure-Python checks over the domain layer.
 
+## LLM Mode
+
+The default mode is deterministic and cost-free:
+
+```env
+AI_OPS_LLM_MODE=mock
+```
+
+To use OpenAI for real triage, configure:
+
+```env
+AI_OPS_LLM_MODE=openai
+OPENAI_API_KEY=your_key_here
+AI_OPS_OPENAI_MODEL=gpt-5.4-mini
+AI_OPS_LLM_FALLBACK_ENABLED=true
+```
+
+The backend uses the Responses API with a JSON Schema output format. If the OpenAI call fails and fallback is enabled, the request is classified by the local deterministic triage engine and marked with `llm_fallback_used`.
+
+Do not commit `.env`; it is ignored by Git.
+
 ## Example Request
 
 ```bash
@@ -66,6 +88,36 @@ curl -X POST http://127.0.0.1:8000/requests ^
 - `GET /metrics`
 - `GET /audit`
 
+## n8n Workflow
+
+Import:
+
+```text
+workflows/ai_ops_approval_n8n.json
+```
+
+The workflow has two webhook paths:
+
+- `POST /webhook/ai-ops-request`
+- `POST /webhook/ai-ops-decision`
+
+Set this in n8n:
+
+```text
+AI_OPS_API_BASE_URL=http://127.0.0.1:8000
+```
+
+If n8n runs in Docker, use:
+
+```text
+AI_OPS_API_BASE_URL=http://host.docker.internal:8000
+```
+
+## Technical References
+
+- OpenAI Responses API: https://developers.openai.com/api/reference/resources/responses/methods/create/
+- OpenAI Structured Outputs: https://developers.openai.com/api/docs/guides/structured-outputs
+
 ## MVP Result
 
 The backend already produces:
@@ -78,9 +130,5 @@ The backend already produces:
 - Persisted request state.
 - Audit events.
 - Metrics.
-
-## Next Step
-
-Build the n8n workflow:
-
-Webhook -> HTTP Request to backend -> IF/Switch -> Send approval -> Wait -> Decision endpoint -> Respond to Webhook.
+- Optional real LLM triage.
+- Importable n8n webhook workflow.

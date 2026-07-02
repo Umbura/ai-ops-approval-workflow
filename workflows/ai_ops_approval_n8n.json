@@ -1,0 +1,230 @@
+{
+  "name": "AI Ops Approval Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-ops-request",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3f1d9551-fc3d-4a0f-9e3e-721d977ea001",
+      "name": "Submit Request Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        -160
+      ],
+      "webhookId": "8e31e6ad-6a9e-4dd3-b92f-2f01e9d01f20"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.AI_OPS_API_BASE_URL || 'http://host.docker.internal:8000') + '/requests' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body || $json) }}",
+        "options": {}
+      },
+      "id": "1da1fe1b-d107-4875-9870-c3f637bbddf5",
+      "name": "Create Backend Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $json;\nconst needsReview = request.triage?.requires_human_review === true;\nconst baseUrl = $env.WEBHOOK_URL || 'http://localhost:5678';\nreturn [{\n  json: {\n    request_id: request.id,\n    status: request.status,\n    category: request.triage?.category,\n    priority: request.triage?.priority,\n    confidence: request.triage?.confidence,\n    requires_human_review: needsReview,\n    suggested_action: request.triage?.suggested_action,\n    rationale: request.triage?.rationale,\n    risk_flags: request.triage?.risk_flags || [],\n    next_step: needsReview\n      ? 'Send a POST request to the decision webhook with request_id, decision, reviewer, and notes.'\n      : 'No manual decision is required for this low-risk request.',\n    decision_webhook_path: '/webhook/ai-ops-decision',\n    decision_webhook_example: needsReview ? {\n      request_id: request.id,\n      decision: 'approve',\n      reviewer: 'n8n-reviewer',\n      notes: 'Approved after manual review.'\n    } : null,\n    decision_webhook_url_hint: `${baseUrl}/webhook/ai-ops-decision`\n  }\n}];"
+      },
+      "id": "76d15f0c-e0ce-4fdf-9aa0-c21365d51722",
+      "name": "Prepare Request Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "c465a978-3311-4860-bbc8-e83a53415ae6",
+      "name": "Respond With Triage",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        60,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-ops-decision",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a0556f13-8ce8-410b-b73b-6de637e635ac",
+      "name": "Decision Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        160
+      ],
+      "webhookId": "6517900d-41bb-4bf1-aac1-795773ae5410"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.AI_OPS_API_BASE_URL || 'http://host.docker.internal:8000') + '/requests/' + (($json.body && $json.body.request_id) || $json.request_id) + '/decision' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ decision: (($json.body && $json.body.decision) || $json.decision || 'approve'), reviewer: (($json.body && $json.body.reviewer) || $json.reviewer || 'n8n-reviewer'), notes: (($json.body && $json.body.notes) || $json.notes || 'Decision captured by n8n workflow.') }) }}",
+        "options": {}
+      },
+      "id": "5230c41c-9613-4116-a579-8323440f2434",
+      "name": "Record Backend Decision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "ec499d96-2705-43dd-9bec-b5b49fd46ff8",
+      "name": "Respond With Decision",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## AI Ops Approval Workflow\\n\\n1. POST to `/webhook/ai-ops-request` with the request payload.\\n2. n8n calls the FastAPI backend at `$env.AI_OPS_API_BASE_URL` or `http://host.docker.internal:8000`.\\n3. Backend classifies the request with mock or OpenAI LLM mode.\\n4. If `requires_human_review` is true, POST to `/webhook/ai-ops-decision` with `request_id`, `decision`, `reviewer`, and `notes`.\\n\\nNo credentials are stored in this workflow export.",
+        "height": 320,
+        "width": 480
+      },
+      "id": "c75a08f3-08e5-4025-a022-43f26f700d43",
+      "name": "Workflow Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        420
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Submit Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create Backend Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Backend Request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Request Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Request Response": {
+      "main": [
+        [
+          {
+            "node": "Respond With Triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Webhook": {
+      "main": [
+        [
+          {
+            "node": "Record Backend Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Backend Decision": {
+      "main": [
+        [
+          {
+            "node": "Respond With Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Sao_Paulo"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [
+    {
+      "name": "ai-automation"
+    },
+    {
+      "name": "human-in-the-loop"
+    },
+    {
+      "name": "portfolio"
+    }
+  ]
+}

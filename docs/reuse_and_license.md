@@ -15,6 +15,7 @@ This project was created after studying n8n, LangGraph, CrewAI, and public n8n w
 - No exported workflow JSON copied.
 - No proprietary or enterprise files copied.
 - No credentials or external secrets copied.
+- The n8n workflow in this repository is original and credential-free.
 
 ## License Notes
 
@@ -22,8 +23,8 @@ This project was created after studying n8n, LangGraph, CrewAI, and public n8n w
 - LangGraph is MIT.
 - CrewAI is MIT.
 - n8n-workflows is MIT, but public workflow JSONs can still contain outdated or context-specific decisions. We use them only as inspiration.
+- OpenAI API usage follows public OpenAI developer documentation for the Responses API and Structured Outputs.
 
 ## Project License
 
 The code in this repository is original and released under MIT.
-

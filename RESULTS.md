@@ -17,6 +17,8 @@ This repository currently ships a backend-only MVP for an AI-assisted operations
 - The local API starts successfully with Uvicorn.
 - `POST /requests` creates and classifies a high-risk request.
 - GitHub Actions CI is configured to run dependency sync, lint, tests, and compilation on every push and pull request to `main`.
+- Optional OpenAI Responses API triage is implemented with Structured Outputs and tested with a mocked HTTP transport.
+- n8n workflow export is available at `workflows/ai_ops_approval_n8n.json`.
 
 ## Smoke Test Output
 
@@ -26,7 +28,7 @@ fraud_risk high True 0.92 high_amount_at_risk,sensitive_customer,urgency_signal,
 needs_review fraud_risk True
 approved 1 2
 uv sync: ok
-4 passed in 0.71s
+6 passed
 All checks passed!
 AI Ops Approval Workflow
 server: ok http://127.0.0.1:8000
@@ -39,10 +41,10 @@ review: True
 
 ## Current Scope
 
-- No external LLM calls are required.
-- No Docker or n8n runtime is required for this version.
-- The AI behavior is intentionally mocked with deterministic rules so the backend can be demonstrated, tested, and evolved without API cost.
+- External LLM calls are optional.
+- No Docker or n8n runtime is required to run the backend tests.
+- The default AI behavior is deterministic and cost-free; OpenAI mode can be enabled through environment variables.
 
 ## Next Backend Milestone
 
-Replace the deterministic triage strategy with a provider interface that can support OpenAI, local models, or a hybrid rules-plus-LLM approach while keeping the current approval and audit flow unchanged.
+Run one real OpenAI smoke test and import the n8n workflow in a local n8n instance.
