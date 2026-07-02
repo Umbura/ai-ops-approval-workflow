@@ -1,0 +1,13 @@
+{
+  "title": "Invoice mismatch on monthly billing",
+  "description": "Customer says the invoice amount does not match the contracted plan and asks for a refund analysis.",
+  "requester": "finance@example.com",
+  "channel": "n8n-webhook",
+  "customer_tier": "standard",
+  "amount_at_risk": 180,
+  "metadata": {
+    "source_system": "demo",
+    "external_ticket_id": "DEMO-1002"
+  }
+}
+

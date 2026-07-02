@@ -1,0 +1,13 @@
+{
+  "title": "Suspicious login and payment dispute",
+  "description": "Enterprise customer reported an urgent suspicious login followed by a payment dispute. The support team needs a recommended action before contacting the customer.",
+  "requester": "ops-team@example.com",
+  "channel": "n8n-webhook",
+  "customer_tier": "enterprise",
+  "amount_at_risk": 2500,
+  "metadata": {
+    "source_system": "demo",
+    "external_ticket_id": "DEMO-1001"
+  }
+}
+
