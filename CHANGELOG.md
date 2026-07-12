@@ -2,6 +2,13 @@
 
 All notable changes are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Evidence-based comparison against the repositories and architecture studied before implementation.
+- Curated screenshots of the review queue, audit trail, and canonical n8n workflow.
+
 ## 1.0.1 - 2026-07-12
 
 ### Added

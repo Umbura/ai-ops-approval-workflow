@@ -43,6 +43,18 @@ flowchart LR
 
 FastAPI owns business rules and state transitions. n8n provides external orchestration. The model can suggest a next action but cannot execute a final operational action.
 
+## Product Preview
+
+![Operational review queue with risk classification and request detail](docs/images/review-queue.jpg)
+
+The dashboard exposes operational metrics, category and priority, deterministic risk controls, model rationale, and the context required for a human decision. All records shown above are fictitious local demonstration data.
+
+## Reference Alignment
+
+The V1 follows the architecture selected after studying n8n, LangGraph, CrewAI, and public n8n workflow patterns. The minimum portfolio scope is complete. The stronger reference scope is partially complete because PostgreSQL migrations, in-workflow `Wait` or `sendAndWait`, classification benchmarking, per-request model provenance, and execution-cost metrics remain future work.
+
+The detailed, evidence-based comparison is available in [docs/reference_comparison.md](docs/reference_comparison.md).
+
 ## Quick Start
 
 ### Docker Compose
@@ -113,6 +125,8 @@ The dashboard provides:
 
 When API authentication is enabled, the key is entered in the connection dialog and retained only in browser session storage.
 
+![Persistent audit events for request creation and human decisions](docs/images/audit-log.jpg)
+
 ## API
 
 Operational endpoints require:
@@ -144,6 +158,10 @@ Repeated calls with the same key and payload return the existing request without
 ## n8n Workflow
 
 The canonical export is [workflows/ai_ops_approval_n8n.json](workflows/ai_ops_approval_n8n.json). Docker Compose imports and publishes it automatically in n8n `2.29.10`.
+
+![n8n request and decision webhook paths](docs/images/n8n-workflow.jpg)
+
+The screenshot is rendered from the canonical export in an isolated local preview. Node positions were auto-arranged for legibility; executable nodes and connections were not changed.
 
 Webhook endpoints:
 
