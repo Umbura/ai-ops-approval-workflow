@@ -1,79 +1,79 @@
-# Demo Script
+# Demonstration Script
 
-Use this script to present the MVP in a portfolio review or interview.
-
-## 1. Start The API
+## 1. Start The Environment
 
 ```powershell
-uv sync
-uv run uvicorn ai_ops_approval.main:app --reload
+$env:AI_OPS_LLM_MODE = "mock"
+docker compose up --build -d
 ```
 
-Open:
+Open the dashboard:
 
 ```text
-http://127.0.0.1:8000/docs
+http://127.0.0.1:8000
 ```
 
-Use `AI_OPS_LLM_MODE=mock` for a no-cost demo. Use `AI_OPS_LLM_MODE=openai` only when you want real model triage.
+Use the local development API key:
 
-## 2. Explain The Problem
+```text
+local-development-key
+```
 
-Operational teams receive requests that can involve fraud, billing, access, support, or data quality. Some requests can be auto-summarized, but risky actions need human approval and auditability.
+## 2. Submit A High-Risk Request
 
-## 3. Submit A High-Risk Request
-
-Use `examples/high_priority_request.json` in `POST /requests`.
-
-Expected result:
-
-- Category: `fraud_risk`
-- Priority: `high`
-- Status: `needs_review`
-- Human review: `true`
-
-## 4. Record A Human Decision
-
-Use `POST /requests/{request_id}/decision`.
-
-Example:
-
-```json
-{
-  "decision": "approve",
-  "reviewer": "Iago",
-  "notes": "Approved after checking customer context."
+```powershell
+$body = Get-Content -Raw examples\high_priority_request.json
+$headers = @{
+  "X-Webhook-Secret" = "local-webhook-secret"
+  "X-Idempotency-Key" = "portfolio-demo-001"
 }
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:5678/webhook/ai-ops-request `
+  -Headers $headers `
+  -ContentType application/json `
+  -Body $body
 ```
 
 Expected result:
 
-- Status changes to `approved`.
-- A decision is stored.
-- An audit event is generated.
+```text
+category: fraud_risk
+priority: high
+status: needs_review
+requires_human_review: true
+```
 
-## 5. Show Metrics And Audit
+## 3. Review The Request
+
+In the dashboard:
+
+1. Select the new request.
+2. Inspect the risk flags, rationale, confidence, and suggested action.
+3. Select `Record decision`.
+4. Record an approval, rejection, or change request.
+
+The queue, metrics, status, and audit log update after the decision.
+
+## 4. Show The Workflow
 
 Open:
 
 ```text
-GET /metrics
-GET /audit
+http://127.0.0.1:5678
 ```
 
-Use this to highlight that the project is not just a chatbot. It has persistence, state transitions, risk routing, approval, and observability.
+The workflow contains separate request and decision paths, explicit webhook authorization, idempotency propagation, backend API authentication, and shaped responses.
 
-## 6. Show n8n
+## 5. Explain The Engineering Decisions
 
-Import:
+- FastAPI owns testable business rules.
+- n8n owns orchestration.
+- model output is constrained by Structured Outputs.
+- deterministic rules can override unsafe model output.
+- SQLite provides a reproducible local state store.
+- API and webhook secrets protect the two trust boundaries.
+- idempotency prevents duplicate triage and duplicate state creation.
+- every request and decision generates an audit event.
 
-```text
-workflows/ai_ops_approval_n8n.json
-```
-
-Show the two webhook paths:
-
-- `ai-ops-request`
-- `ai-ops-decision`
-
-This demonstrates that the backend can be used as a reliable workflow engine behind n8n.
+Use mock mode for the routine demonstration. The real OpenAI integration has already been validated and recorded in `RESULTS.md`.

@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Operational request triage and human approval console.">
+    <title>AI Ops Console</title>
+    <link rel="stylesheet" href="/assets/app.css">
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"><i data-lucide="workflow"></i></div>
+          <div>
+            <strong>AI Ops</strong>
+            <span>Approval Console</span>
+          </div>
+        </div>
+
+        <nav class="primary-nav" aria-label="Primary navigation">
+          <button class="nav-item active" type="button" data-view="queue">
+            <i data-lucide="inbox"></i><span>Review queue</span>
+          </button>
+          <button class="nav-item" type="button" data-view="audit">
+            <i data-lucide="scroll-text"></i><span>Audit log</span>
+          </button>
+        </nav>
+
+        <div class="system-state">
+          <span class="health-dot" id="healthDot"></span>
+          <div><strong id="healthLabel">Checking API</strong><span id="modelLabel">Connecting</span></div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Operations</p>
+            <h1 id="pageTitle">Review queue</h1>
+          </div>
+          <div class="topbar-actions">
+            <a class="icon-button" href="/docs" target="_blank" rel="noreferrer" aria-label="Open API documentation" title="API documentation">
+              <i data-lucide="book-open"></i>
+            </a>
+            <button class="icon-button" id="authButton" type="button" aria-label="Configure API key" title="Configure API key">
+              <i data-lucide="key-round"></i>
+            </button>
+            <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh data" title="Refresh data">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+        </header>
+
+        <section class="metrics-grid" aria-label="Request metrics">
+          <article class="metric"><span>Total requests</span><strong id="metricTotal">0</strong><i data-lucide="layers-3"></i></article>
+          <article class="metric"><span>Needs review</span><strong id="metricReview">0</strong><i data-lucide="shield-alert"></i></article>
+          <article class="metric"><span>Approved</span><strong id="metricApproved">0</strong><i data-lucide="circle-check-big"></i></article>
+          <article class="metric"><span>Rejected</span><strong id="metricRejected">0</strong><i data-lucide="circle-x"></i></article>
+        </section>
+
+        <section id="queueView" class="view-panel">
+          <div class="queue-toolbar">
+            <label class="search-control">
+              <i data-lucide="search"></i>
+              <span class="sr-only">Search requests</span>
+              <input id="searchInput" type="search" placeholder="Search requests" autocomplete="off">
+            </label>
+            <label class="select-control">
+              <span class="sr-only">Filter by status</span>
+              <select id="statusFilter">
+                <option value="">All statuses</option>
+                <option value="needs_review">Needs review</option>
+                <option value="received">Received</option>
+                <option value="changes_requested">Changes requested</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <i data-lucide="chevron-down"></i>
+            </label>
+          </div>
+
+          <div class="queue-layout">
+            <div class="table-region">
+              <table>
+                <thead><tr><th>Request</th><th>Category</th><th>Priority</th><th>Status</th><th>Created</th></tr></thead>
+                <tbody id="requestRows"></tbody>
+              </table>
+              <div class="empty-state" id="queueEmpty" hidden>
+                <i data-lucide="inbox"></i><strong>No matching requests</strong><span>Adjust the current filters.</span>
+              </div>
+            </div>
+
+            <aside class="detail-panel" id="detailPanel" aria-label="Request details">
+              <div class="detail-empty">
+                <i data-lucide="mouse-pointer-2"></i>
+                <strong>Select a request</strong>
+                <span>Request context and decision controls appear here.</span>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="auditView" class="view-panel" hidden>
+          <div class="audit-header"><span>Most recent events</span><span id="auditCount">0 events</span></div>
+          <div class="table-region audit-table">
+            <table>
+              <thead><tr><th>Event</th><th>Request</th><th>Details</th><th>Time</th></tr></thead>
+              <tbody id="auditRows"></tbody>
+            </table>
+            <div class="empty-state" id="auditEmpty" hidden>
+              <i data-lucide="scroll-text"></i><strong>No audit events</strong><span>Events appear after requests are created.</span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="authDialog" class="modal auth-modal">
+      <form method="dialog" id="authForm">
+        <div class="modal-heading">
+          <div><p class="eyebrow">Connection</p><h2>API access</h2></div>
+          <button class="icon-button close-dialog" type="button" aria-label="Close" title="Close"><i data-lucide="x"></i></button>
+        </div>
+        <label>API key<input id="apiKeyInput" type="password" autocomplete="current-password" placeholder="Enter X-API-Key"></label>
+        <p class="form-error" id="authError" role="alert"></p>
+        <div class="modal-actions">
+          <button class="button secondary" id="clearKeyButton" type="button"><i data-lucide="trash-2"></i>Clear</button>
+          <button class="button primary" type="submit"><i data-lucide="log-in"></i>Connect</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="decisionDialog" class="modal decision-modal">
+      <form method="dialog" id="decisionForm">
+        <div class="modal-heading">
+          <div><p class="eyebrow">Human review</p><h2>Record decision</h2></div>
+          <button class="icon-button close-dialog" type="button" aria-label="Close" title="Close"><i data-lucide="x"></i></button>
+        </div>
+        <label>Decision<select id="decisionInput" required><option value="approve">Approve</option><option value="reject">Reject</option><option value="request_changes">Request changes</option></select></label>
+        <label>Reviewer<input id="reviewerInput" required minlength="2" maxlength="120" value="Portfolio reviewer"></label>
+        <label>Notes<textarea id="notesInput" maxlength="2000" rows="4" placeholder="Decision context"></textarea></label>
+        <p class="form-error" id="decisionError" role="alert"></p>
+        <div class="modal-actions">
+          <button class="button secondary close-dialog" type="button">Cancel</button>
+          <button class="button primary" type="submit"><i data-lucide="check"></i>Record decision</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

@@ -1,50 +1,67 @@
-# MVP Results
+# Validation Results
 
-Verification date: 2026-07-02
+Verification date: 2026-07-11
 
-This repository currently ships a backend-only MVP for an AI-assisted operations approval workflow.
+Version `1.0.0` was validated as a local end-to-end portfolio application.
 
-## What Was Verified
-
-- Python modules compile successfully with `python -m compileall -q src tests`.
-- The triage engine identifies a fraud/security request as high priority and sends it to human review.
-- The SQLite request store can create a request, record an approval decision, update status, and persist audit events.
-- Project dependencies install successfully with `uv sync --dev`.
-- Unit tests pass with `uv run pytest -q`.
-- Lint passes with `uv run ruff check .`.
-- The FastAPI app imports successfully.
-- API integration is tested with direct ASGI transport, without requiring a running server.
-- The local API starts successfully with Uvicorn.
-- `POST /requests` creates and classifies a high-risk request.
-- GitHub Actions CI is configured to run dependency sync, lint, tests, and compilation on every push and pull request to `main`.
-- Optional OpenAI Responses API triage is implemented with Structured Outputs and tested with a mocked HTTP transport.
-- n8n workflow export is available at `workflows/ai_ops_approval_n8n.json`.
-
-## Smoke Test Output
+## Automated Validation
 
 ```text
-compileall: ok
-fraud_risk high True 0.92 high_amount_at_risk,sensitive_customer,urgency_signal,fraud_or_security_signal
-needs_review fraud_risk True
-approved 1 2
-uv sync: ok
-6 passed
-All checks passed!
-AI Ops Approval Workflow
-server: ok http://127.0.0.1:8000
-health: ok mock
-status: needs_review
-category: fraud_risk
-priority: high
-review: True
+pytest: 12 passed
+ruff: passed
+compileall: passed
+JavaScript syntax: passed
+n8n JSON syntax and connection integrity: passed
+Docker Compose configuration: passed
+API container build: passed
 ```
 
-## Current Scope
+GitHub Actions runs the same checks on pushes and pull requests to `main`.
 
-- External LLM calls are optional.
-- No Docker or n8n runtime is required to run the backend tests.
-- The default AI behavior is deterministic and cost-free; OpenAI mode can be enabled through environment variables.
+## OpenAI Runtime Validation
 
-## Next Backend Milestone
+A single direct request was sent through `OpenAIResponsesTriageProvider` with fallback bypassed.
 
-Run one real OpenAI smoke test and import the n8n workflow in a local n8n instance.
+```text
+model: gpt-5.4-mini
+category: fraud_risk
+priority: critical
+confidence: 0.98
+requires_human_review: true
+```
+
+The response matched the strict output schema. The deterministic safety boundary preserved human review for the high-value VIP fraud case.
+
+No further paid calls were made. Automated provider tests use `httpx.MockTransport`.
+
+## n8n Runtime Validation
+
+n8n `2.29.10` was executed in Docker. The canonical workflow was imported, published, and exercised through both production webhooks.
+
+Verified behavior:
+
+- a request without `X-Webhook-Secret` returned HTTP `401`;
+- an authenticated request reached the protected FastAPI service;
+- repeated `X-Idempotency-Key` values returned one stored request;
+- high-risk triage returned `needs_review`;
+- the decision webhook recorded an approval;
+- the final request status changed to `approved`;
+- the decision and request creation produced audit events.
+
+## Dashboard Validation
+
+The dashboard was exercised against the Dockerized API.
+
+Verified behavior:
+
+- API-key connection dialog;
+- metrics and review queue;
+- request detail and risk context;
+- decision modal;
+- audit log navigation;
+- no browser console errors;
+- no document-level horizontal overflow at 1280 x 720 or 390 x 844.
+
+## Scope
+
+The validated scope is a complete local V1. Production infrastructure, PostgreSQL, role-based access control, and centralized observability remain deployment concerns rather than V1 requirements.

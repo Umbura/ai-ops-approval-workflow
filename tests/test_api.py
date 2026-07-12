@@ -42,6 +42,16 @@ def test_api_request_decision_and_metrics(tmp_path) -> None:
             assert decision.status_code == 200
             assert decision.json()["status"] == "approved"
 
+            repeated_decision = await client.post(
+                f"/requests/{request_payload['id']}/decision",
+                json={
+                    "decision": "reject",
+                    "reviewer": "Iago",
+                    "notes": "A finalized request cannot be changed.",
+                },
+            )
+            assert repeated_decision.status_code == 409
+
             metrics = await client.get("/metrics")
             assert metrics.status_code == 200
             assert metrics.json()["approved"] == 1

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     app_name: str = "AI Ops Approval Workflow"
     env: str = "local"
     db_path: str = "data/app.db"
+    api_key: SecretStr | None = None
     llm_mode: str = "mock"
     llm_fallback_enabled: bool = True
     openai_api_key: SecretStr | None = Field(

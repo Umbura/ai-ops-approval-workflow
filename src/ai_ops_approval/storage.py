@@ -29,8 +29,10 @@ class RequestStore:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 10000")
         try:
             yield conn
             conn.commit()
@@ -39,6 +41,7 @@ class RequestStore:
 
     def init_db(self) -> None:
         with self.connect() as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS requests (
@@ -52,9 +55,23 @@ class RequestStore:
                     amount_at_risk REAL NOT NULL,
                     metadata_json TEXT NOT NULL,
                     triage_json TEXT NOT NULL,
+                    idempotency_key TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
+                """
+            )
+            request_columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(requests)").fetchall()
+            }
+            if "idempotency_key" not in request_columns:
+                conn.execute("ALTER TABLE requests ADD COLUMN idempotency_key TEXT")
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_requests_idempotency_key
+                ON requests(idempotency_key)
+                WHERE idempotency_key IS NOT NULL
                 """
             )
             conn.execute(
@@ -82,7 +99,17 @@ class RequestStore:
                 """
             )
 
-    def create_request(self, payload: dict[str, Any], triage: TriageResult) -> dict[str, Any]:
+    def create_request(
+        self,
+        payload: dict[str, Any],
+        triage: TriageResult,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        if idempotency_key:
+            existing = self.get_request_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                return existing
+
         request_id = str(uuid.uuid4())
         now = utcnow_iso()
         status = (
@@ -101,35 +128,51 @@ class RequestStore:
             "amount_at_risk": float(payload.get("amount_at_risk") or 0),
             "metadata_json": json.dumps(payload.get("metadata", {}), ensure_ascii=True),
             "triage_json": json.dumps(triage_to_dict(triage), ensure_ascii=True),
+            "idempotency_key": idempotency_key,
             "created_at": now,
             "updated_at": now,
         }
 
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO requests (
-                    id, status, title, description, requester, channel,
-                    customer_tier, amount_at_risk, metadata_json, triage_json,
-                    created_at, updated_at
-                ) VALUES (
-                    :id, :status, :title, :description, :requester, :channel,
-                    :customer_tier, :amount_at_risk, :metadata_json, :triage_json,
-                    :created_at, :updated_at
+        try:
+            with self.connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO requests (
+                        id, status, title, description, requester, channel,
+                        customer_tier, amount_at_risk, metadata_json, triage_json,
+                        idempotency_key, created_at, updated_at
+                    ) VALUES (
+                        :id, :status, :title, :description, :requester, :channel,
+                        :customer_tier, :amount_at_risk, :metadata_json, :triage_json,
+                        :idempotency_key, :created_at, :updated_at
+                    )
+                    """,
+                    row,
                 )
-                """,
-                row,
-            )
-            self._insert_audit(
-                conn,
-                request_id,
-                "request_created",
-                {
-                    "status": status.value,
-                    "triage": triage_to_dict(triage),
-                },
-            )
+                self._insert_audit(
+                    conn,
+                    request_id,
+                    "request_created",
+                    {
+                        "status": status.value,
+                        "triage": triage_to_dict(triage),
+                    },
+                )
+        except sqlite3.IntegrityError:
+            if idempotency_key:
+                existing = self.get_request_by_idempotency_key(idempotency_key)
+                if existing is not None:
+                    return existing
+            raise
         return self.get_request(request_id)
+
+    def get_request_by_idempotency_key(self, idempotency_key: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM requests WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+        return request_row_to_dict(row) if row is not None else None
 
     def get_request(self, request_id: str) -> dict[str, Any]:
         with self.connect() as conn:
@@ -141,13 +184,14 @@ class RequestStore:
             raise RequestNotFoundError(request_id)
         return request_row_to_dict(row)
 
-    def list_requests(self, status: str | None = None) -> list[dict[str, Any]]:
+    def list_requests(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         query = "SELECT * FROM requests"
         params: tuple[Any, ...] = ()
         if status:
             query += " WHERE status = ?"
             params = (status,)
-        query += " ORDER BY created_at DESC"
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params = (*params, limit)
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [request_row_to_dict(row) for row in rows]
@@ -207,35 +251,36 @@ class RequestStore:
         }
 
     def metrics(self) -> dict[str, Any]:
-        requests = self.list_requests()
+        requests = self.list_requests(limit=1_000_000)
         by_status: dict[str, int] = {}
         by_category: dict[str, int] = {}
-        review_required = 0
         for item in requests:
             by_status[item["status"]] = by_status.get(item["status"], 0) + 1
             category = item["triage"]["category"]
             by_category[category] = by_category.get(category, 0) + 1
-            if item["triage"]["requires_human_review"]:
-                review_required += 1
         return {
             "total_requests": len(requests),
             "by_status": by_status,
             "by_category": by_category,
-            "review_required": review_required,
+            "review_required": by_status.get(RequestStatus.NEEDS_REVIEW.value, 0),
             "approved": by_status.get(RequestStatus.APPROVED.value, 0),
             "rejected": by_status.get(RequestStatus.REJECTED.value, 0),
         }
 
-    def audit_events(self, limit: int = 100) -> list[dict[str, Any]]:
+    def audit_events(
+        self,
+        limit: int = 100,
+        request_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM audit_events"
+        params: tuple[Any, ...] = ()
+        if request_id:
+            query += " WHERE request_id = ?"
+            params = (request_id,)
+        query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        params = (*params, limit)
         with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM audit_events
-                ORDER BY created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+            rows = conn.execute(query, params).fetchall()
         return [
             {
                 "id": int(row["id"]),
@@ -290,4 +335,3 @@ def request_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
-

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ai_ops_approval.domain import Decision, Priority, RequestCategory, RequestStatus
 
@@ -17,11 +18,24 @@ class RequestCreate(BaseModel):
     amount_at_risk: float = Field(default=0, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(value) > 50:
+            raise ValueError("metadata cannot contain more than 50 top-level fields")
+        try:
+            encoded = json.dumps(value, ensure_ascii=True, allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("metadata must be JSON serializable") from exc
+        if len(encoded) > 16_384:
+            raise ValueError("metadata cannot exceed 16384 bytes")
+        return value
+
 
 class TriageResponse(BaseModel):
     category: RequestCategory
     priority: Priority
-    confidence: float
+    confidence: float = Field(ge=0, le=1)
     requires_human_review: bool
     suggested_action: str
     rationale: str
@@ -72,4 +86,3 @@ class AuditEventResponse(BaseModel):
     event_type: str
     payload: dict[str, Any]
     created_at: datetime
-

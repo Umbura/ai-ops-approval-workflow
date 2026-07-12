@@ -27,5 +27,6 @@ def test_request_lifecycle(tmp_path) -> None:
 
     assert decision["status"] == "approved"
     assert store.metrics()["approved"] == 1
+    assert store.metrics()["review_required"] == 0
     assert len(store.audit_events()) == 2
-
+    assert len(store.audit_events(request_id=created["id"])) == 2

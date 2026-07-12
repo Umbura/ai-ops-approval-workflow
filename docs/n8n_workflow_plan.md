@@ -1,60 +1,43 @@
 # n8n Workflow
 
-This backend includes an importable n8n workflow at:
+Canonical export:
 
 ```text
 workflows/ai_ops_approval_n8n.json
 ```
 
-The export stores no credentials.
+Validated runtime: n8n `2.29.10`.
 
-## Nodes
+## Request Path
 
-1. Submit Request Webhook
-   - Method: POST
-   - Path: `ai-ops-request`
-   - Response mode: using Respond to Webhook node
+1. `POST /webhook/ai-ops-request` receives a request.
+2. `Validate Request Webhook` compares `X-Webhook-Secret` with `AI_OPS_WEBHOOK_SECRET`.
+3. `Authorize Request Webhook` returns HTTP `401` when validation fails.
+4. An idempotency key is retained from the request or generated from the n8n execution.
+5. `Create Backend Request` calls `POST /requests` with `X-API-Key` and `Idempotency-Key`.
+6. `Prepare Request Response` returns triage and decision instructions.
 
-2. Create Backend Request
-   - POST `{{$env.AI_OPS_API_BASE_URL}}/requests`
-   - Fallback base URL: `http://host.docker.internal:8000`
-   - Body: incoming webhook JSON
+## Decision Path
 
-3. Prepare Request Response
-   - Returns request id, status, category, priority, suggested action, and decision webhook instructions
+1. `POST /webhook/ai-ops-decision` receives `request_id`, `decision`, `reviewer`, and `notes`.
+2. `Validate Decision Webhook` checks the webhook secret.
+3. `Authorize Decision Webhook` returns HTTP `401` when validation fails.
+4. `Record Backend Decision` calls `POST /requests/{request_id}/decision` with `X-API-Key`.
+5. The backend response is returned to the caller.
 
-4. Decision Webhook
-   - Method: POST
-   - Path: `ai-ops-decision`
-   - Body: `request_id`, `decision`, `reviewer`, `notes`
-
-5. Record Backend Decision
-   - POST `{{$env.AI_OPS_API_BASE_URL}}/requests/{request_id}/decision`
-
-## Local Import
-
-1. Start the backend:
-
-```powershell
-uv run uvicorn ai_ops_approval.main:app --reload
-```
-
-2. In n8n, set the environment variable:
+## Required Environment Variables
 
 ```text
-AI_OPS_API_BASE_URL=http://host.docker.internal:8000
+AI_OPS_API_BASE_URL=http://api:8000
+AI_OPS_API_KEY=<backend-api-key>
+AI_OPS_WEBHOOK_SECRET=<webhook-secret>
+WEBHOOK_URL=http://localhost:5678/
 ```
 
-For n8n running directly on the host machine, use:
+## Docker Compose
 
-```text
-AI_OPS_API_BASE_URL=http://127.0.0.1:8000
-```
-
-3. Import `workflows/ai_ops_approval_n8n.json`.
-
-4. Test the submit webhook with a payload like `examples/high_priority_request.json`.
+`docker/n8n-entrypoint.sh` imports and publishes the workflow when the n8n container starts. Changes to the canonical JSON replace the stored workflow on restart.
 
 ## Export Rule
 
-Do not export credentials. Use placeholders only.
+Credentials and fixed secrets must not be stored in the workflow JSON. Runtime values are supplied through environment variables.

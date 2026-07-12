@@ -1,6 +1,6 @@
 [project]
 name = "ai-ops-approval-workflow"
-version = "0.1.0"
+version = "1.0.0"
 description = "Backend-first AI workflow for request triage, human approval, and audit logging."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"

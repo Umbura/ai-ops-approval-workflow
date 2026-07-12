@@ -1,6 +1,71 @@
 {
+  "id": "AiOpsApprovalV1",
   "name": "AI Ops Approval Workflow",
   "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const expected = $env.AI_OPS_WEBHOOK_SECRET || '';\nconst provided = String($json.headers?.['x-webhook-secret'] || '');\nfor (const item of $input.all()) {\n  item.json.webhook_authorized = !expected || provided === expected;\n  item.json.idempotency_key = String(\n    item.json.headers?.['x-idempotency-key'] ||\n    item.json.body?.idempotency_key ||\n    `n8n-${$execution.id}`\n  );\n}\nreturn $input.all();"
+      },
+      "id": "d8e7b2df-3912-40c7-83d8-f74804d3e03b",
+      "name": "Validate Request Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -590,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9c848da5-5d10-453b-8752-a3e8e22dc524",
+              "leftValue": "={{ $json.webhook_authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "87ec3047-1bef-428a-b815-f58b119ea676",
+      "name": "Authorize Request Webhook",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -460,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { error: 'Unauthorized webhook request' } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "0eec1ce4-3a4b-4c56-9e41-6d1eb0242a09",
+      "name": "Reject Request Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -260,
+        -40
+      ]
+    },
     {
       "parameters": {
         "httpMethod": "POST",
@@ -28,6 +93,14 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.AI_OPS_API_KEY || '' }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.idempotency_key }}"
             }
           ]
         },
@@ -47,7 +120,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const request = $json;\nconst needsReview = request.triage?.requires_human_review === true;\nconst baseUrl = $env.WEBHOOK_URL || 'http://localhost:5678';\nreturn [{\n  json: {\n    request_id: request.id,\n    status: request.status,\n    category: request.triage?.category,\n    priority: request.triage?.priority,\n    confidence: request.triage?.confidence,\n    requires_human_review: needsReview,\n    suggested_action: request.triage?.suggested_action,\n    rationale: request.triage?.rationale,\n    risk_flags: request.triage?.risk_flags || [],\n    next_step: needsReview\n      ? 'Send a POST request to the decision webhook with request_id, decision, reviewer, and notes.'\n      : 'No manual decision is required for this low-risk request.',\n    decision_webhook_path: '/webhook/ai-ops-decision',\n    decision_webhook_example: needsReview ? {\n      request_id: request.id,\n      decision: 'approve',\n      reviewer: 'n8n-reviewer',\n      notes: 'Approved after manual review.'\n    } : null,\n    decision_webhook_url_hint: `${baseUrl}/webhook/ai-ops-decision`\n  }\n}];"
+        "jsCode": "const request = $json;\nconst needsReview = request.triage?.requires_human_review === true;\nconst baseUrl = ($env.WEBHOOK_URL || 'http://localhost:5678').replace(/\\/+$/, '');\nreturn [{\n  json: {\n    request_id: request.id,\n    status: request.status,\n    category: request.triage?.category,\n    priority: request.triage?.priority,\n    confidence: request.triage?.confidence,\n    requires_human_review: needsReview,\n    suggested_action: request.triage?.suggested_action,\n    rationale: request.triage?.rationale,\n    risk_flags: request.triage?.risk_flags || [],\n    next_step: needsReview\n      ? 'Send a POST request to the decision webhook with request_id, decision, reviewer, and notes.'\n      : 'No manual decision is required for this low-risk request.',\n    decision_webhook_path: '/webhook/ai-ops-decision',\n    decision_webhook_example: needsReview ? {\n      request_id: request.id,\n      decision: 'approve',\n      reviewer: 'n8n-reviewer',\n      notes: 'Approved after manual review.'\n    } : null,\n    decision_webhook_url_hint: `${baseUrl}/webhook/ai-ops-decision`\n  }\n}];"
       },
       "id": "76d15f0c-e0ce-4fdf-9aa0-c21365d51722",
       "name": "Prepare Request Response",
@@ -56,6 +129,70 @@
       "position": [
         -200,
         -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const expected = $env.AI_OPS_WEBHOOK_SECRET || '';\nconst provided = String($json.headers?.['x-webhook-secret'] || '');\nfor (const item of $input.all()) {\n  item.json.webhook_authorized = !expected || provided === expected;\n}\nreturn $input.all();"
+      },
+      "id": "c2b7f748-50fa-48a4-8ee2-c6fe38b14c2f",
+      "name": "Validate Decision Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -590,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "aa4fb215-4dff-4310-bd3f-b49c6191e162",
+              "leftValue": "={{ $json.webhook_authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "da321569-178c-46b0-b4a4-d29167e2a4b2",
+      "name": "Authorize Decision Webhook",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -460,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { error: 'Unauthorized webhook request' } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "0c1b1d21-105c-4393-a110-a9dfcf9c8640",
+      "name": "Reject Decision Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -260,
+        280
       ]
     },
     {
@@ -100,6 +237,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.AI_OPS_API_KEY || '' }}"
             }
           ]
         },
@@ -134,7 +275,7 @@
     },
     {
       "parameters": {
-        "content": "## AI Ops Approval Workflow\\n\\n1. POST to `/webhook/ai-ops-request` with the request payload.\\n2. n8n calls the FastAPI backend at `$env.AI_OPS_API_BASE_URL` or `http://host.docker.internal:8000`.\\n3. Backend classifies the request with mock or OpenAI LLM mode.\\n4. If `requires_human_review` is true, POST to `/webhook/ai-ops-decision` with `request_id`, `decision`, `reviewer`, and `notes`.\\n\\nNo credentials are stored in this workflow export.",
+        "content": "## AI Ops Approval Workflow\\n\\n1. POST to `/webhook/ai-ops-request` with `X-Webhook-Secret`.\\n2. n8n calls the FastAPI backend using `AI_OPS_API_BASE_URL` and `AI_OPS_API_KEY`.\\n3. Backend classifies the request with mock or OpenAI LLM mode.\\n4. If `requires_human_review` is true, POST to `/webhook/ai-ops-decision` with the secret and decision payload.\\n\\nNo credentials are stored in this workflow export.",
         "height": 320,
         "width": 480
       },
@@ -154,7 +295,36 @@
       "main": [
         [
           {
+            "node": "Validate Request Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authorize Request Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorize Request Webhook": {
+      "main": [
+        [
+          {
             "node": "Create Backend Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Request Webhook",
             "type": "main",
             "index": 0
           }
@@ -187,7 +357,36 @@
       "main": [
         [
           {
+            "node": "Validate Decision Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Decision Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authorize Decision Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorize Decision Webhook": {
+      "main": [
+        [
+          {
             "node": "Record Backend Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Decision Webhook",
             "type": "main",
             "index": 0
           }
@@ -212,7 +411,7 @@
     "saveManualExecutions": true,
     "timezone": "America/Sao_Paulo"
   },
-  "versionId": "1.0.0",
+  "versionId": "f146bc2f-8d3c-4ec2-956d-dd0c358ff0c5",
   "meta": {
     "templateCredsSetupCompleted": true
   },

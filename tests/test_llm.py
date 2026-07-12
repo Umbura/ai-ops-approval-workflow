@@ -95,3 +95,30 @@ def test_fallback_provider_uses_mock_when_openai_fails() -> None:
     assert result.category == RequestCategory.FRAUD_RISK
     assert result.requires_human_review is True
     assert "llm_fallback_used" in result.risk_flags
+
+
+def test_fallback_provider_uses_mock_for_malformed_model_output() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"output_text": "not-json"})
+
+    primary = OpenAIResponsesTriageProvider(
+        Settings(
+            llm_mode="openai",
+            openai_api_key="test-key",
+            openai_model="test-model",
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+    provider = FallbackTriageProvider(primary, MockTriageProvider())
+
+    result = provider.triage(
+        {
+            "title": "Suspicious login",
+            "description": "Enterprise customer reported a suspicious login.",
+            "customer_tier": "enterprise",
+        }
+    )
+
+    assert result.category == RequestCategory.FRAUD_RISK
+    assert result.requires_human_review is True
+    assert "llm_fallback_used" in result.risk_flags

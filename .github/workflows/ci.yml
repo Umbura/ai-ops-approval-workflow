@@ -35,3 +35,14 @@ jobs:
 
       - name: Compile
         run: uv run python -m compileall -q src tests
+
+      - name: Validate frontend and workflow
+        run: |
+          node --check src/ai_ops_approval/static/app.js
+          python -m json.tool workflows/ai_ops_approval_n8n.json > /dev/null
+
+      - name: Validate Compose
+        run: docker compose config --quiet
+
+      - name: Build API container
+        run: docker build --tag ai-ops-approval:test .

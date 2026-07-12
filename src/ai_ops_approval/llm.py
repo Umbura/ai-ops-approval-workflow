@@ -149,7 +149,13 @@ class OpenAIResponsesTriageProvider:
         except httpx.HTTPError as exc:
             raise TriageProviderError(f"OpenAI request failed: {exc}") from exc
 
-        return parse_openai_triage_response(response.json(), payload)
+        try:
+            response_json = response.json()
+        except ValueError as exc:
+            raise TriageProviderError("OpenAI response was not valid JSON") from exc
+        if not isinstance(response_json, dict):
+            raise TriageProviderError("OpenAI response used an invalid top-level structure")
+        return parse_openai_triage_response(response_json, payload)
 
 
 class FallbackTriageProvider:
@@ -180,6 +186,8 @@ def parse_openai_triage_response(response_json: dict[str, Any], payload: dict[st
         data = json.loads(raw_text)
     except json.JSONDecodeError as exc:
         raise TriageProviderError("OpenAI response did not contain valid JSON") from exc
+    if not isinstance(data, dict):
+        raise TriageProviderError("OpenAI response did not contain a structured object")
     return coerce_triage_result(data, payload)
 
 
@@ -187,8 +195,19 @@ def extract_response_text(response_json: dict[str, Any]) -> str:
     if isinstance(response_json.get("output_text"), str):
         return response_json["output_text"]
 
-    for output_item in response_json.get("output", []):
-        for content_item in output_item.get("content", []):
+    output = response_json.get("output", [])
+    if not isinstance(output, list):
+        raise TriageProviderError("OpenAI response used an invalid output structure")
+
+    for output_item in output:
+        if not isinstance(output_item, dict):
+            continue
+        content = output_item.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for content_item in content:
+            if not isinstance(content_item, dict):
+                continue
             text = content_item.get("text")
             if isinstance(text, str) and text.strip():
                 return text
@@ -200,12 +219,26 @@ def coerce_triage_result(data: dict[str, Any], payload: dict[str, Any]) -> Triag
     try:
         category = RequestCategory(str(data["category"]))
         priority = Priority(str(data["priority"]))
-    except (KeyError, ValueError) as exc:
-        raise TriageProviderError("OpenAI response used an invalid category or priority") from exc
+        confidence = round(max(0.0, min(float(data["confidence"]), 1.0)), 2)
+        requires_human_review = data["requires_human_review"]
+        suggested_action = data["suggested_action"]
+        rationale = data["rationale"]
+        raw_risk_flags = data["risk_flags"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TriageProviderError("OpenAI response did not match the triage schema") from exc
 
-    confidence = round(max(0.0, min(float(data["confidence"]), 1.0)), 2)
-    risk_flags = tuple(str(flag) for flag in data.get("risk_flags", [])[:10])
-    requires_human_review = bool(data["requires_human_review"])
+    if not isinstance(requires_human_review, bool):
+        raise TriageProviderError("OpenAI response used an invalid review flag")
+    if not isinstance(suggested_action, str) or not suggested_action.strip():
+        raise TriageProviderError("OpenAI response used an invalid suggested action")
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise TriageProviderError("OpenAI response used an invalid rationale")
+    if not isinstance(raw_risk_flags, list) or not all(
+        isinstance(flag, str) for flag in raw_risk_flags
+    ):
+        raise TriageProviderError("OpenAI response used invalid risk flags")
+
+    risk_flags = tuple(raw_risk_flags[:10])
 
     if must_force_human_review(payload, priority, risk_flags):
         requires_human_review = True
@@ -215,8 +248,8 @@ def coerce_triage_result(data: dict[str, Any], payload: dict[str, Any]) -> Triag
         priority=priority,
         confidence=confidence,
         requires_human_review=requires_human_review,
-        suggested_action=str(data["suggested_action"]),
-        rationale=str(data["rationale"]),
+        suggested_action=suggested_action,
+        rationale=rationale,
         risk_flags=risk_flags,
     )
 

@@ -9,18 +9,18 @@ ai-ops-approval-workflow
 Recommended short description:
 
 ```text
-Backend-first AI workflow for request triage, human approval, and audit logging.
+AI operations workflow with FastAPI, OpenAI triage, n8n orchestration, human approval, and audit logging.
 ```
 
 Recommended topics:
 
 ```text
-fastapi, python, sqlite, openai, ai-automation, workflow-automation, human-in-the-loop, n8n, portfolio
+fastapi, python, sqlite, openai, structured-outputs, ai-automation, workflow-automation, human-in-the-loop, n8n, docker, portfolio
 ```
 
 ## Suggested README Pitch
 
-This project demonstrates how to build an AI-assisted operational workflow with a backend-first architecture. It receives operational requests, classifies risk with either deterministic rules or OpenAI Structured Outputs, stores state in SQLite, requires human approval for sensitive cases, and keeps an audit trail for every transition.
+This project implements an AI-assisted operational workflow with FastAPI, OpenAI Structured Outputs, deterministic guardrails, n8n orchestration, a human approval dashboard, idempotent request handling, and persistent audit events.
 
 ## What To Emphasize In Applications
 
@@ -29,4 +29,8 @@ This project demonstrates how to build an AI-assisted operational workflow with 
 - OpenAI Responses API integration with fallback behavior.
 - Auditability and stateful workflow handling.
 - Importable n8n workflow.
-- No dependency on paid LLM APIs for the MVP.
+- Dockerized end-to-end runtime.
+- API and webhook authentication.
+- Functional approval dashboard.
+- Real OpenAI and n8n validation results.
+- No dependency on paid LLM APIs for routine demonstrations.
