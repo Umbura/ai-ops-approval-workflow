@@ -1,12 +1,18 @@
 import json
 
 import httpx
+import pytest
 
 from ai_ops_approval.domain import Priority, RequestCategory
 from ai_ops_approval.llm import (
     FallbackTriageProvider,
     MockTriageProvider,
     OpenAIResponsesTriageProvider,
+    TriageProviderError,
+    build_triage_provider,
+    coerce_triage_result,
+    extract_response_text,
+    parse_openai_triage_response,
 )
 from ai_ops_approval.settings import Settings
 
@@ -18,6 +24,10 @@ def test_openai_provider_parses_structured_response() -> None:
         assert body["store"] is False
         assert body["text"]["format"]["type"] == "json_schema"
         assert request.headers["Authorization"] == "Bearer test-key"
+        model_input = json.loads(body["input"][1]["content"][0]["text"])
+        assert model_input["title"] == "Suspicious chargeback"
+        assert "requester" not in model_input
+        assert "metadata" not in model_input
 
         return httpx.Response(
             200,
@@ -122,3 +132,110 @@ def test_fallback_provider_uses_mock_for_malformed_model_output() -> None:
     assert result.category == RequestCategory.FRAUD_RISK
     assert result.requires_human_review is True
     assert "llm_fallback_used" in result.risk_flags
+
+
+def test_openai_provider_requires_api_key(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AI_OPS_OPENAI_API_KEY", raising=False)
+    provider = OpenAIResponsesTriageProvider(
+        Settings(_env_file=None, llm_mode="openai", openai_api_key=None)
+    )
+
+    with pytest.raises(TriageProviderError, match="OPENAI_API_KEY"):
+        provider.triage({"title": "Request", "description": "Request description"})
+
+
+def test_provider_factory_honors_mode_and_fallback_configuration() -> None:
+    mock_provider = build_triage_provider(Settings(_env_file=None, llm_mode="mock"))
+    openai_provider = build_triage_provider(
+        Settings(
+            _env_file=None,
+            llm_mode="openai",
+            openai_api_key="test-key",
+            llm_fallback_enabled=False,
+        )
+    )
+
+    assert isinstance(mock_provider, MockTriageProvider)
+    assert isinstance(openai_provider, OpenAIResponsesTriageProvider)
+
+
+@pytest.mark.parametrize(
+    "response_json",
+    [
+        {"output": "invalid"},
+        {"output": []},
+        {"output": [None]},
+        {"output": [{"content": "invalid"}]},
+    ],
+)
+def test_extract_response_text_rejects_invalid_structures(
+    response_json: dict,
+) -> None:
+    with pytest.raises(TriageProviderError):
+        extract_response_text(response_json)
+
+
+def test_parser_rejects_non_object_output() -> None:
+    with pytest.raises(TriageProviderError, match="structured object"):
+        parse_openai_triage_response(
+            {"output_text": "[]"},
+            {"title": "Request", "description": "Request description"},
+        )
+
+
+def test_coercion_rejects_boolean_confidence() -> None:
+    with pytest.raises(TriageProviderError, match="triage schema"):
+        coerce_triage_result(
+            {
+                "category": "general",
+                "priority": "low",
+                "confidence": True,
+                "requires_human_review": False,
+                "suggested_action": "Route to the operations queue.",
+                "rationale": "No explicit risk signal was detected.",
+                "risk_flags": [],
+            },
+            {"title": "Request", "description": "Request description"},
+        )
+
+
+@pytest.mark.parametrize(
+    "risk_flags",
+    [
+        ["valid_flag"] * 11,
+        ["  "],
+        ["x" * 81],
+    ],
+)
+def test_coercion_rejects_invalid_risk_flags(risk_flags: list[str]) -> None:
+    with pytest.raises(TriageProviderError, match="risk flags"):
+        coerce_triage_result(
+            {
+                "category": "general",
+                "priority": "low",
+                "confidence": 0.8,
+                "requires_human_review": False,
+                "suggested_action": "Route to the operations queue.",
+                "rationale": "No explicit risk signal was detected.",
+                "risk_flags": risk_flags,
+            },
+            {"title": "Request", "description": "Request description"},
+        )
+
+
+def test_coercion_normalizes_and_deduplicates_risk_flags() -> None:
+    result = coerce_triage_result(
+        {
+            "category": "general",
+            "priority": "low",
+            "confidence": 0.8,
+            "requires_human_review": False,
+            "suggested_action": "Route to the operations queue.",
+            "rationale": "No explicit risk signal was detected.",
+            "risk_flags": [" review_required ", "review_required"],
+        },
+        {"title": "Request", "description": "Request description"},
+    )
+
+    assert result.risk_flags == ("review_required",)

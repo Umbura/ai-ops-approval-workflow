@@ -43,10 +43,24 @@ def test_dashboard_is_public_and_api_key_protects_operations(tmp_path, monkeypat
             dashboard = await client.get("/")
             assert dashboard.status_code == 200
             assert "AI Ops Console" in dashboard.text
+            assert dashboard.headers["X-Content-Type-Options"] == "nosniff"
+            assert dashboard.headers["X-Frame-Options"] == "DENY"
+            assert "frame-ancestors 'none'" in dashboard.headers["Content-Security-Policy"]
+
+            docs = await client.get("/docs")
+            assert docs.status_code == 200
+            assert "https://cdn.jsdelivr.net" in docs.headers["Content-Security-Policy"]
 
             config = await client.get("/config")
             assert config.status_code == 200
             assert config.json()["auth_required"] is True
+            assert config.headers["Cache-Control"] == "no-store"
+
+            health = await client.get("/health")
+            assert health.status_code == 200
+            assert health.json()["status"] == "ok"
+            assert "env" not in health.json()
+            assert health.headers["Cache-Control"] == "no-store"
 
             missing = await client.get("/requests")
             assert missing.status_code == 401
@@ -59,6 +73,7 @@ def test_dashboard_is_public_and_api_key_protects_operations(tmp_path, monkeypat
                 headers={"X-API-Key": "test-api-key"},
             )
             assert authorized.status_code == 200
+            assert authorized.headers["Cache-Control"] == "no-store"
 
     try:
         asyncio.run(run_flow())
@@ -87,6 +102,15 @@ def test_idempotency_key_reuses_request_without_second_triage(tmp_path, monkeypa
             assert first.json()["id"] == second.json()["id"]
             assert provider.calls == 1
             assert len(store.list_requests()) == 1
+
+            conflicting_payload = {**REQUEST_PAYLOAD, "title": "Different operation"}
+            conflict = await client.post(
+                "/requests",
+                headers=headers,
+                json=conflicting_payload,
+            )
+            assert conflict.status_code == 409
+            assert provider.calls == 1
 
     try:
         asyncio.run(run_flow())
@@ -131,6 +155,43 @@ def test_metadata_size_limit_is_enforced(tmp_path, monkeypatch) -> None:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post("/requests", json=payload)
             assert response.status_code == 422
+            assert provider.calls == 0
+
+    try:
+        asyncio.run(run_flow())
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()
+
+
+def test_request_contract_rejects_blank_and_unknown_fields(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("AI_OPS_API_KEY", raising=False)
+    store = RequestStore(str(tmp_path / "strict-contract.db"))
+    provider = CountingProvider()
+    app.dependency_overrides[get_store] = lambda: store
+    app.dependency_overrides[get_triage_provider] = lambda: provider
+    get_settings.cache_clear()
+
+    async def run_flow() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            blank = await client.post(
+                "/requests",
+                json={**REQUEST_PAYLOAD, "title": "   "},
+            )
+            unknown = await client.post(
+                "/requests",
+                json={**REQUEST_PAYLOAD, "unexpected": "value"},
+            )
+            blank_key = await client.post(
+                "/requests",
+                headers={"Idempotency-Key": "   "},
+                json=REQUEST_PAYLOAD,
+            )
+
+            assert blank.status_code == 422
+            assert unknown.status_code == 422
+            assert blank_key.status_code == 422
             assert provider.calls == 0
 
     try:

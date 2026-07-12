@@ -13,15 +13,15 @@ Validated runtime: n8n `2.29.10`.
 1. `POST /webhook/ai-ops-request` receives a request.
 2. `Validate Request Webhook` compares `X-Webhook-Secret` with `AI_OPS_WEBHOOK_SECRET`.
 3. `Authorize Request Webhook` returns HTTP `401` when validation fails.
-4. An idempotency key is retained from the request or generated from the n8n execution.
+4. An idempotency key is retained from the request or generated from the n8n execution, then removed from the API payload.
 5. `Create Backend Request` calls `POST /requests` with `X-API-Key` and `Idempotency-Key`.
 6. `Prepare Request Response` returns triage and decision instructions.
 
 ## Decision Path
 
 1. `POST /webhook/ai-ops-decision` receives `request_id`, `decision`, `reviewer`, and `notes`.
-2. `Validate Decision Webhook` checks the webhook secret.
-3. `Authorize Decision Webhook` returns HTTP `401` when validation fails.
+2. `Validate Decision Webhook` checks the webhook secret, request UUID, decision, reviewer, and notes.
+3. `Authorize Decision Webhook` returns HTTP `401` for authentication failures and `422` for invalid payloads.
 4. `Record Backend Decision` calls `POST /requests/{request_id}/decision` with `X-API-Key`.
 5. The backend response is returned to the caller.
 

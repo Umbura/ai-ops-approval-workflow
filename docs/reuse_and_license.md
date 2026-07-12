@@ -22,7 +22,7 @@ This project was created after studying n8n, LangGraph, CrewAI, and public n8n w
 - n8n is source-available under the Sustainable Use License. It is safe to study and self-host for this portfolio use case, but the source should not be copied into this project.
 - LangGraph is MIT.
 - CrewAI is MIT.
-- n8n-workflows is MIT, but public workflow JSONs can still contain outdated or context-specific decisions. We use them only as inspiration.
+- n8n-workflows is MIT, but public workflow JSONs can still contain outdated or context-specific decisions. They served only as architectural references.
 - OpenAI API usage follows public OpenAI developer documentation for the Responses API and Structured Outputs.
 
 ## Project License

@@ -35,7 +35,7 @@ def test_api_request_decision_and_metrics(tmp_path) -> None:
                 f"/requests/{request_payload['id']}/decision",
                 json={
                     "decision": "approve",
-                    "reviewer": "Iago",
+                    "reviewer": "operations-reviewer",
                     "notes": "Approved after checking customer context.",
                 },
             )
@@ -46,7 +46,7 @@ def test_api_request_decision_and_metrics(tmp_path) -> None:
                 f"/requests/{request_payload['id']}/decision",
                 json={
                     "decision": "reject",
-                    "reviewer": "Iago",
+                    "reviewer": "operations-reviewer",
                     "notes": "A finalized request cannot be changed.",
                 },
             )

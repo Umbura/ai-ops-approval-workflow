@@ -111,6 +111,7 @@ async function refreshAll() {
     setHealth(true, health.llm_mode === "openai" ? health.llm_model : "Deterministic triage");
     renderMetrics();
     renderRequests();
+    renderRequestDetail();
     renderAudit();
   } catch (error) {
     if (error.message !== "Authentication required") {
@@ -204,7 +205,7 @@ function renderRequestDetail() {
       <div><span>Requester</span><strong>${escapeHtml(request.requester)}</strong></div>
       <div><span>Channel</span><strong>${escapeHtml(request.channel)}</strong></div>
       <div><span>Customer tier</span><strong>${escapeHtml(request.customer_tier)}</strong></div>
-      <div><span>Amount at risk</span><strong>${escapeHtml(formatCurrency(request.amount_at_risk))}</strong></div>
+      <div><span>Amount at risk</span><strong>${escapeHtml(formatAmount(request.amount_at_risk))}</strong></div>
     </section>
     <div class="detail-actions">
       <button class="button primary decision-button" type="button" ${isFinal ? "disabled" : ""}><i data-lucide="gavel"></i>${isFinal ? "Decision recorded" : "Record decision"}</button>
@@ -344,8 +345,11 @@ function formatLabel(value) {
   return String(value || "").replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
+function formatAmount(value) {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
 }
 
 function formatDateTime(value) {

@@ -29,4 +29,3 @@ def test_general_request_stays_low_priority() -> None:
     assert result.category == RequestCategory.GENERAL
     assert result.priority == Priority.LOW
     assert result.requires_human_review is True
-

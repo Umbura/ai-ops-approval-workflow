@@ -147,7 +147,9 @@ def triage_request(payload: dict[str, Any]) -> TriageResult:
         priority = Priority.MEDIUM
 
     if "high_amount_at_risk" in risk_flags or "fraud_or_security_signal" in risk_flags:
-        priority = Priority.CRITICAL if "destructive_action_requested" in risk_flags else Priority.HIGH
+        priority = (
+            Priority.CRITICAL if "destructive_action_requested" in risk_flags else Priority.HIGH
+        )
     if "sensitive_customer" in risk_flags and priority == Priority.MEDIUM:
         priority = Priority.HIGH
     if "urgency_signal" in risk_flags and priority == Priority.LOW:
@@ -217,4 +219,3 @@ def build_rationale(
         f"Classified as {category.value} with {priority.value} priority "
         f"and confidence {confidence:.2f}; flags: {flag_text}."
     )
-

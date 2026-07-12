@@ -6,7 +6,12 @@
     <meta name="description" content="Operational request triage and human approval console.">
     <title>AI Ops Console</title>
     <link rel="stylesheet" href="/assets/app.css">
-    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
+    <script
+      src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"
+      integrity="sha384-uTYyvsSSUZeaPhb5RbKlQa0zY/WpX/QHfvg2mczXyBQOpkWPEDy9lczyp+w7SKXu"
+      crossorigin="anonymous"
+      defer
+    ></script>
     <script src="/assets/app.js" defer></script>
   </head>
   <body>
@@ -140,7 +145,7 @@
           <button class="icon-button close-dialog" type="button" aria-label="Close" title="Close"><i data-lucide="x"></i></button>
         </div>
         <label>Decision<select id="decisionInput" required><option value="approve">Approve</option><option value="reject">Reject</option><option value="request_changes">Request changes</option></select></label>
-        <label>Reviewer<input id="reviewerInput" required minlength="2" maxlength="120" value="Portfolio reviewer"></label>
+        <label>Reviewer<input id="reviewerInput" required minlength="2" maxlength="120" value="Operations reviewer"></label>
         <label>Notes<textarea id="notesInput" maxlength="2000" rows="4" placeholder="Decision context"></textarea></label>
         <p class="form-error" id="decisionError" role="alert"></p>
         <div class="modal-actions">

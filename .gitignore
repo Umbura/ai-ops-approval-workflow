@@ -4,10 +4,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 .env
 data/*.db
 data/*.db-*
 dist/
 build/
 *.egg-info/
-

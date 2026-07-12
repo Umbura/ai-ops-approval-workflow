@@ -4,17 +4,25 @@ import json
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ai_ops_approval.domain import Decision, Priority, RequestCategory, RequestStatus
 
 
-class RequestCreate(BaseModel):
+class APIModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+        allow_inf_nan=False,
+    )
+
+
+class RequestCreate(APIModel):
     title: str = Field(min_length=3, max_length=160)
     description: str = Field(min_length=5, max_length=4000)
-    requester: str = Field(default="unknown", max_length=120)
-    channel: str = Field(default="webhook", max_length=80)
-    customer_tier: str = Field(default="standard", max_length=80)
+    requester: str = Field(default="unknown", min_length=1, max_length=120)
+    channel: str = Field(default="webhook", min_length=1, max_length=80)
+    customer_tier: str = Field(default="standard", min_length=1, max_length=80)
     amount_at_risk: float = Field(default=0, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -32,17 +40,17 @@ class RequestCreate(BaseModel):
         return value
 
 
-class TriageResponse(BaseModel):
+class TriageResponse(APIModel):
     category: RequestCategory
     priority: Priority
     confidence: float = Field(ge=0, le=1)
     requires_human_review: bool
-    suggested_action: str
-    rationale: str
-    risk_flags: list[str]
+    suggested_action: str = Field(min_length=10, max_length=500)
+    rationale: str = Field(min_length=10, max_length=500)
+    risk_flags: list[str] = Field(max_length=10)
 
 
-class RequestResponse(BaseModel):
+class RequestResponse(APIModel):
     id: str
     status: RequestStatus
     title: str
@@ -51,18 +59,19 @@ class RequestResponse(BaseModel):
     channel: str
     customer_tier: str
     amount_at_risk: float
+    metadata: dict[str, Any]
     triage: TriageResponse
     created_at: datetime
     updated_at: datetime
 
 
-class DecisionCreate(BaseModel):
+class DecisionCreate(APIModel):
     decision: Decision
     reviewer: str = Field(min_length=2, max_length=120)
     notes: str = Field(default="", max_length=2000)
 
 
-class DecisionResponse(BaseModel):
+class DecisionResponse(APIModel):
     request_id: str
     status: RequestStatus
     decision: Decision
@@ -71,7 +80,7 @@ class DecisionResponse(BaseModel):
     decided_at: datetime
 
 
-class MetricsResponse(BaseModel):
+class MetricsResponse(APIModel):
     total_requests: int
     by_status: dict[str, int]
     by_category: dict[str, int]
@@ -80,7 +89,7 @@ class MetricsResponse(BaseModel):
     rejected: int
 
 
-class AuditEventResponse(BaseModel):
+class AuditEventResponse(APIModel):
     id: int
     request_id: str
     event_type: str

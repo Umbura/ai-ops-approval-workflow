@@ -30,8 +30,14 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
-      - name: Test
-        run: uv run pytest -q
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test with coverage
+        run: uv run pytest --cov --cov-report=term-missing
 
       - name: Compile
         run: uv run python -m compileall -q src tests

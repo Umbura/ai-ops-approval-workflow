@@ -63,7 +63,7 @@ Open:
 http://127.0.0.1:5678
 ```
 
-The workflow contains separate request and decision paths, explicit webhook authorization, idempotency propagation, backend API authentication, and shaped responses.
+The workflow contains separate request and decision paths, fail-closed webhook authorization, sanitized payload forwarding, idempotency propagation, explicit decision validation, backend API authentication, and shaped responses.
 
 ## 5. Explain The Engineering Decisions
 
@@ -73,7 +73,7 @@ The workflow contains separate request and decision paths, explicit webhook auth
 - deterministic rules can override unsafe model output.
 - SQLite provides a reproducible local state store.
 - API and webhook secrets protect the two trust boundaries.
-- idempotency prevents duplicate triage and duplicate state creation.
+- payload-bound idempotency prevents duplicates and rejects key reuse with different content.
 - every request and decision generates an audit event.
 
 Use mock mode for the routine demonstration. The real OpenAI integration has already been validated and recorded in `RESULTS.md`.

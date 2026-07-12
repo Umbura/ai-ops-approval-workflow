@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import logging
 import secrets
+from collections.abc import Awaitable, Callable
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from fastapi.security import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
+from starlette.responses import Response
 
 from ai_ops_approval import __version__
-from ai_ops_approval.domain import Decision, RequestStatus
+from ai_ops_approval.domain import RequestStatus
 from ai_ops_approval.llm import TriageProvider, TriageProviderError, build_triage_provider
 from ai_ops_approval.schemas import (
     AuditEventResponse,
@@ -23,7 +28,14 @@ from ai_ops_approval.schemas import (
     RequestResponse,
 )
 from ai_ops_approval.settings import Settings, get_settings
-from ai_ops_approval.storage import RequestNotFoundError, RequestStore
+from ai_ops_approval.storage import (
+    IdempotencyConflictError,
+    RequestFinalizedError,
+    RequestNotFoundError,
+    RequestStore,
+)
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="AI Ops Approval Workflow",
@@ -33,6 +45,41 @@ app = FastAPI(
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+DASHBOARD_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://unpkg.com; "
+    "style-src 'self'; "
+    "connect-src 'self'; "
+    "img-src 'self' data:; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
+API_DOCS_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
+
+
+@app.middleware("http")
+async def add_security_headers(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    response = await call_next(request)
+    path = request.url.path
+    response.headers["Content-Security-Policy"] = (
+        API_DOCS_CSP if path in {app.docs_url, app.redoc_url} else DASHBOARD_CSP
+    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    if path in {"/config", "/health", "/metrics", "/audit"} or path.startswith("/requests"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @lru_cache
@@ -78,20 +125,19 @@ def public_config(settings: SettingsDep) -> dict[str, str | bool]:
     return {
         "app_name": settings.app_name,
         "auth_required": bool(settings.api_key and settings.api_key.get_secret_value()),
-        "environment": settings.env,
     }
 
 
 @app.get("/health")
-def health(settings: SettingsDep) -> dict[str, str]:
+def health(settings: SettingsDep, store: StoreDep) -> dict[str, str | bool]:
+    store.ping()
     return {
         "status": "ok",
         "app": settings.app_name,
-        "env": settings.env,
         "llm_mode": settings.llm_mode,
         "llm_model": settings.openai_model if settings.llm_mode == "openai" else "mock",
-        "llm_fallback_enabled": str(settings.llm_fallback_enabled).lower(),
-        "auth_required": str(bool(settings.api_key and settings.api_key.get_secret_value())).lower(),
+        "llm_fallback_enabled": settings.llm_fallback_enabled,
+        "auth_required": bool(settings.api_key and settings.api_key.get_secret_value()),
     }
 
 
@@ -105,21 +151,37 @@ def create_request(
         str | None,
         Header(alias="Idempotency-Key", min_length=1, max_length=128),
     ] = None,
-) -> dict:
-    if idempotency_key:
-        existing = store.get_request_by_idempotency_key(idempotency_key)
+) -> dict[str, Any]:
+    request_payload = payload.model_dump()
+    if idempotency_key is not None:
+        idempotency_key = idempotency_key.strip()
+        if not idempotency_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Idempotency-Key cannot be blank",
+            )
+        try:
+            existing = store.get_request_by_idempotency_key(
+                idempotency_key,
+                request_payload,
+            )
+        except IdempotencyConflictError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         if existing is not None:
             return existing
 
-    request_payload = payload.model_dump()
     try:
         triage = provider.triage(request_payload)
     except TriageProviderError as exc:
+        logger.warning("Triage provider unavailable", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Triage service unavailable",
         ) from exc
-    return store.create_request(request_payload, triage, idempotency_key=idempotency_key)
+    try:
+        return store.create_request(request_payload, triage, idempotency_key=idempotency_key)
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @app.get("/requests", response_model=list[RequestResponse])
@@ -128,12 +190,16 @@ def list_requests(
     _auth: AuthDep,
     status_filter: Annotated[RequestStatus | None, Query(alias="status")] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     return store.list_requests(status_filter.value if status_filter else None, limit=limit)
 
 
 @app.get("/requests/{request_id}", response_model=RequestResponse)
-def get_request(request_id: str, store: StoreDep, _auth: AuthDep) -> dict:
+def get_request(
+    request_id: Annotated[str, PathParam(min_length=1, max_length=64)],
+    store: StoreDep,
+    _auth: AuthDep,
+) -> dict[str, Any]:
     try:
         return store.get_request(request_id)
     except RequestNotFoundError as exc:
@@ -142,26 +208,26 @@ def get_request(request_id: str, store: StoreDep, _auth: AuthDep) -> dict:
 
 @app.post("/requests/{request_id}/decision", response_model=DecisionResponse)
 def record_decision(
-    request_id: str,
+    request_id: Annotated[str, PathParam(min_length=1, max_length=64)],
     payload: DecisionCreate,
     store: StoreDep,
     _auth: AuthDep,
-) -> dict:
+) -> dict[str, Any]:
     try:
         return store.record_decision(
             request_id=request_id,
-            decision=Decision(payload.decision),
+            decision=payload.decision,
             reviewer=payload.reviewer,
             notes=payload.notes,
         )
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
-    except ValueError as exc:
+    except RequestFinalizedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/metrics", response_model=MetricsResponse)
-def metrics(store: StoreDep, _auth: AuthDep) -> dict:
+def metrics(store: StoreDep, _auth: AuthDep) -> dict[str, Any]:
     return store.metrics()
 
 
@@ -171,7 +237,7 @@ def audit_events(
     _auth: AuthDep,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     request_id: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     return store.audit_events(limit=limit, request_id=request_id)
 
 
@@ -179,7 +245,7 @@ app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
 
 def run() -> None:
-    uvicorn.run("ai_ops_approval.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("ai_ops_approval.main:app", host="127.0.0.1", port=8000)
 
 
 if __name__ == "__main__":

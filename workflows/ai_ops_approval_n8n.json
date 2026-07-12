@@ -4,7 +4,7 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const expected = $env.AI_OPS_WEBHOOK_SECRET || '';\nconst provided = String($json.headers?.['x-webhook-secret'] || '');\nfor (const item of $input.all()) {\n  item.json.webhook_authorized = !expected || provided === expected;\n  item.json.idempotency_key = String(\n    item.json.headers?.['x-idempotency-key'] ||\n    item.json.body?.idempotency_key ||\n    `n8n-${$execution.id}`\n  );\n}\nreturn $input.all();"
+        "jsCode": "const expected = String($env.AI_OPS_WEBHOOK_SECRET || '');\nfor (const item of $input.all()) {\n  const provided = String(item.json.headers?.['x-webhook-secret'] || '');\n  const body = item.json.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)\n    ? { ...item.json.body }\n    : {};\n  const bodyIdempotencyKey = body.idempotency_key;\n  delete body.idempotency_key;\n  item.json.webhook_authorized = expected.length > 0 && provided === expected;\n  item.json.idempotency_key = String(\n    item.json.headers?.['x-idempotency-key'] ||\n    bodyIdempotencyKey ||\n    `n8n-${$execution.id}`\n  );\n  item.json.request_payload = body;\n}\nreturn $input.all();"
       },
       "id": "d8e7b2df-3912-40c7-83d8-f74804d3e03b",
       "name": "Validate Request Webhook",
@@ -106,7 +106,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.body || $json) }}",
+        "jsonBody": "={{ JSON.stringify($json.request_payload) }}",
         "options": {}
       },
       "id": "1da1fe1b-d107-4875-9870-c3f637bbddf5",
@@ -133,7 +133,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const expected = $env.AI_OPS_WEBHOOK_SECRET || '';\nconst provided = String($json.headers?.['x-webhook-secret'] || '');\nfor (const item of $input.all()) {\n  item.json.webhook_authorized = !expected || provided === expected;\n}\nreturn $input.all();"
+        "jsCode": "const expected = String($env.AI_OPS_WEBHOOK_SECRET || '');\nconst uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nfor (const item of $input.all()) {\n  const provided = String(item.json.headers?.['x-webhook-secret'] || '');\n  const body = item.json.body || {};\n  const requestId = body.request_id ?? item.json.request_id;\n  const decision = body.decision ?? item.json.decision;\n  const reviewer = body.reviewer ?? item.json.reviewer;\n  const notes = body.notes ?? item.json.notes ?? '';\n  item.json.webhook_authorized = expected.length > 0 && provided === expected;\n  item.json.decision_payload_valid =\n    typeof requestId === 'string' &&\n    uuidPattern.test(requestId) &&\n    ['approve', 'reject', 'request_changes'].includes(decision) &&\n    typeof reviewer === 'string' &&\n    reviewer.trim().length >= 2 &&\n    reviewer.trim().length <= 120 &&\n    typeof notes === 'string' &&\n    notes.length <= 2000;\n  item.json.webhook_status = item.json.webhook_authorized ? 422 : 401;\n  item.json.webhook_error = item.json.webhook_authorized\n    ? 'Invalid decision payload'\n    : 'Unauthorized webhook request';\n}\nreturn $input.all();"
       },
       "id": "c2b7f748-50fa-48a4-8ee2-c6fe38b14c2f",
       "name": "Validate Decision Webhook",
@@ -163,6 +163,16 @@
                 "operation": "true",
                 "singleValue": true
               }
+            },
+            {
+              "id": "ecdf32ca-743e-4a95-a54d-3ee0c5e19b65",
+              "leftValue": "={{ $json.decision_payload_valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
@@ -181,9 +191,9 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { error: 'Unauthorized webhook request' } }}",
+        "responseBody": "={{ { error: $json.webhook_error || 'Invalid decision webhook request' } }}",
         "options": {
-          "responseCode": 401
+          "responseCode": "={{ $json.webhook_status || 400 }}"
         }
       },
       "id": "0c1b1d21-105c-4393-a110-a9dfcf9c8640",
@@ -246,7 +256,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ decision: (($json.body && $json.body.decision) || $json.decision || 'approve'), reviewer: (($json.body && $json.body.reviewer) || $json.reviewer || 'n8n-reviewer'), notes: (($json.body && $json.body.notes) || $json.notes || 'Decision captured by n8n workflow.') }) }}",
+        "jsonBody": "={{ JSON.stringify({ decision: (($json.body && $json.body.decision) ?? $json.decision), reviewer: (($json.body && $json.body.reviewer) ?? $json.reviewer), notes: (($json.body && $json.body.notes) ?? $json.notes ?? '') }) }}",
         "options": {}
       },
       "id": "5230c41c-9613-4116-a579-8323440f2434",

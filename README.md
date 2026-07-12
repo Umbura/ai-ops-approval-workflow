@@ -16,7 +16,7 @@ The system receives operational requests, classifies category and risk, applies 
 - OpenAI Responses API provider with strict JSON Schema output.
 - Deterministic fallback when the LLM provider is unavailable.
 - Forced human review for high-risk requests.
-- SQLite persistence with idempotency and audit events.
+- SQLite persistence with payload-bound idempotency and audit events.
 - API-key protection using `X-API-Key`.
 - Protected n8n request and decision webhooks.
 - Reproducible Docker Compose environment.
@@ -115,11 +115,13 @@ When API authentication is enabled, the key is entered in the connection dialog 
 
 ## API
 
-Protected endpoints require:
+Operational endpoints require:
 
 ```http
 X-API-Key: <AI_OPS_API_KEY>
 ```
+
+`/health`, `/config`, `/docs`, and `/openapi.json` remain public. Health responses verify database availability without exposing environment names or credentials.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
@@ -137,7 +139,7 @@ Request creation supports an optional idempotency header:
 Idempotency-Key: <unique-operation-key>
 ```
 
-Repeated calls with the same key return the existing request without running triage again.
+Repeated calls with the same key and payload return the existing request without running triage again. Reuse with different content returns HTTP `409`.
 
 ## n8n Workflow
 
@@ -153,6 +155,8 @@ Both webhooks require:
 ```http
 X-Webhook-Secret: <AI_OPS_WEBHOOK_SECRET>
 ```
+
+Webhook authorization fails closed when the secret is absent. Decision requests also require a valid request UUID, explicit decision, reviewer, and bounded notes.
 
 Example request:
 
@@ -185,6 +189,8 @@ AI_OPS_LLM_FALLBACK_ENABLED=true
 
 The provider sends `store: false`, requests a strict structured object, and applies deterministic safety checks after parsing the response.
 
+Only fields required for triage are sent to the model. Requester identifiers and arbitrary metadata remain in the local persistence layer.
+
 ### Real API Validation
 
 One paid smoke test was executed on 2026-07-11 using `gpt-5.4-mini`:
@@ -212,11 +218,16 @@ Human review is forced for:
 Additional controls include:
 
 - strict request validation;
+- fail-fast runtime configuration;
 - 16 KB metadata limit;
 - API-key comparison using constant-time verification;
 - generic upstream error responses;
-- webhook-secret validation;
-- idempotent request creation;
+- fail-closed webhook-secret validation;
+- sanitized webhook transport payloads;
+- payload-bound idempotent request creation;
+- atomic decision transitions;
+- Content Security Policy and defensive HTTP headers;
+- Subresource Integrity for the external icon bundle;
 - final-state conflict protection;
 - persistent audit events.
 
@@ -226,8 +237,11 @@ Current local results:
 
 | Check | Result |
 | --- | ---: |
-| Automated tests | 12 passed |
+| Automated tests | 34 passed |
+| Branch coverage | 88.80% |
 | Python lint | passed |
+| Python format | passed |
+| Static type check | passed |
 | Python compilation | passed |
 | JavaScript syntax | passed |
 | n8n JSON validation | passed |
@@ -241,8 +255,10 @@ Current local results:
 Run the local checks:
 
 ```bash
-uv run pytest -q
+uv run pytest --cov --cov-report=term-missing
 uv run ruff check .
+uv run ruff format --check .
+uv run mypy
 uv run python -m compileall -q src tests
 node --check src/ai_ops_approval/static/app.js
 python -m json.tool workflows/ai_ops_approval_n8n.json
@@ -266,7 +282,7 @@ Dockerfile                      API container image
 
 ## Production Boundaries
 
-Version `1.0.0` is a complete local portfolio application. A production deployment should additionally provide:
+Version `1.0.1` is a complete local portfolio application. A production deployment should additionally provide:
 
 - TLS and a reverse proxy;
 - unique secrets managed outside source control;
@@ -284,3 +300,5 @@ Version `1.0.0` is a complete local portfolio application. A production deployme
 - [n8n Docker installation](https://docs.n8n.io/hosting/installation/docker/)
 
 License and reuse decisions are documented in [docs/reuse_and_license.md](docs/reuse_and_license.md).
+
+Release history is maintained in [CHANGELOG.md](CHANGELOG.md). Vulnerability reporting instructions are available in [SECURITY.md](SECURITY.md).

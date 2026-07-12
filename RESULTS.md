@@ -1,14 +1,17 @@
 # Validation Results
 
-Verification date: 2026-07-11
+Verification date: 2026-07-12
 
-Version `1.0.0` was validated as a local end-to-end portfolio application.
+Version `1.0.1` was validated as a local end-to-end portfolio application.
 
 ## Automated Validation
 
 ```text
-pytest: 12 passed
+pytest: 34 passed
+branch coverage: 88.80%
 ruff: passed
+ruff format: passed
+mypy --strict: passed
 compileall: passed
 JavaScript syntax: passed
 n8n JSON syntax and connection integrity: passed
@@ -17,6 +20,23 @@ API container build: passed
 ```
 
 GitHub Actions runs the same checks on pushes and pull requests to `main`.
+
+## Hardening Validation
+
+The final review added and validated:
+
+- fail-fast LLM mode and runtime bounds;
+- whitespace stripping and rejection of unknown request fields;
+- model-input minimization that excludes requester identifiers and metadata;
+- payload fingerprints for idempotency conflicts;
+- atomic decision transitions using an immediate SQLite transaction;
+- SQL aggregate metrics without an application-level row cap;
+- rollback on persistence errors;
+- CSP, SRI, defensive HTTP headers, and localhost-only port bindings;
+- fail-closed webhooks with explicit decision-payload validation;
+- transport-field sanitization before forwarding requests from n8n;
+- exact Python base-image version;
+- static type, formatting, and branch-coverage gates.
 
 ## OpenAI Runtime Validation
 
